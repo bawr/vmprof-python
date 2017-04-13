@@ -52,7 +52,7 @@
 /************************************************************/
 
 static void *(*mainloop_get_virtual_ip)(char *) = 0;
-static int opened_profile(const char *interp_name, int memory, int proflines, int native);
+static int opened_profile(const char *interp_name, int memory, int proflines, int native, int real_time);
 static void flush_codes(void);
 
 /************************************************************/
@@ -180,6 +180,7 @@ static void sigprof_handler(int sig_nr, siginfo_t* info, void *ucontext)
     int commit;
     PY_THREAD_STATE_T * tstate = NULL;
     void (*prevhandler)(int);
+
 #ifndef RPYTHON_VMPROF
     // TERRIBLE HACK AHEAD
     // on OS X, the thread local storage is sometimes uninitialized
@@ -250,7 +251,7 @@ static int install_sigprof_handler(void)
     sa.sa_sigaction = sigprof_handler;
     sa.sa_flags = SA_RESTART | SA_SIGINFO;
     if (sigemptyset(&sa.sa_mask) == -1 ||
-        sigaction(SIGPROF, &sa, NULL) == -1)
+        sigaction(signal_type, &sa, NULL) == -1)
         return -1;
     return 0;
 }
@@ -262,7 +263,7 @@ static int remove_sigprof_handler(void)
     ign_sigint.sa_flags = 0;
     sigemptyset(&ign_sigint.sa_mask);
 
-    if (sigaction(SIGPROF, &ign_sigint, NULL) < 0) {
+    if (sigaction(signal_type, &ign_sigint, NULL) < 0) {
         fprintf(stderr, "Could not remove the signal handler (for profiling)\n");
         return -1;
     }
@@ -275,7 +276,7 @@ static int install_sigprof_timer(void)
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = profile_interval_usec;
     timer.it_value = timer.it_interval;
-    if (setitimer(ITIMER_PROF, &timer, NULL) != 0)
+    if (setitimer(itimer_type, &timer, NULL) != 0)
         return -1;
     return 0;
 }
@@ -284,7 +285,7 @@ static int remove_sigprof_timer(void) {
     static struct itimerval timer;
     timerclear(&(timer.it_interval));
     timerclear(&(timer.it_value));
-    if (setitimer(ITIMER_PROF, &timer, NULL) != 0) {
+    if (setitimer(itimer_type, &timer, NULL) != 0) {
         fprintf(stderr, "Could not disable the signal handler (for profiling)\n");
         return -1;
     }
@@ -354,7 +355,7 @@ static void disable_cpyprof(void)
 #endif
 
 RPY_EXTERN
-int vmprof_enable(int memory, int native)
+int vmprof_enable(int memory, int native, int real_time)
 {
 #ifdef VMP_SUPPORTS_NATIVE_PROFILING
     init_cpyprof(native);

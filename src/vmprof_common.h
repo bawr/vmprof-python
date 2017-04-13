@@ -17,9 +17,11 @@
 static long prepare_interval_usec = 0;
 static long profile_interval_usec = 0;
 
-static int opened_profile(const char *interp_name, int memory, int proflines, int native);
+static int opened_profile(const char *interp_name, int memory, int proflines, int native, int real_time);
 
 #ifdef VMPROF_UNIX
+static int signal_type = 0;
+static int itimer_type = 0;
 static struct profbuf_s *volatile current_codes;
 #endif
 
@@ -64,7 +66,7 @@ typedef struct prof_stacktrace_s {
 
 RPY_EXTERN
 char *vmprof_init(int fd, double interval, int memory,
-                  int proflines, const char *interp_name, int native)
+                  int proflines, const char *interp_name, int native, int real_time)
 {
     if (!(interval >= 1e-6 && interval < 1.0)) {   /* also if it is NaN */
         return "bad value for 'interval'";
@@ -74,6 +76,13 @@ char *vmprof_init(int fd, double interval, int memory,
     if (prepare_concurrent_bufs() < 0)
         return "out of memory";
 #if VMPROF_UNIX
+    if (real_time) {
+        signal_type = SIGALRM;
+        itimer_type = ITIMER_REAL;
+    } else {
+        signal_type = SIGPROF;
+        itimer_type = ITIMER_PROF;
+    }
     current_codes = NULL;
     assert(fd >= 0);
 #else
@@ -85,14 +94,14 @@ char *vmprof_init(int fd, double interval, int memory,
     }
 #endif
     vmp_set_profile_fileno(fd);
-    if (opened_profile(interp_name, memory, proflines, native) < 0) {
+    if (opened_profile(interp_name, memory, proflines, native, real_time) < 0) {
         vmp_set_profile_fileno(0);
         return strerror(errno);
     }
     return NULL;
 }
 
-static int opened_profile(const char *interp_name, int memory, int proflines, int native)
+static int opened_profile(const char *interp_name, int memory, int proflines, int native, int real_time)
 {
     int success;
     int bits;
@@ -141,6 +150,12 @@ static int opened_profile(const char *interp_name, int memory, int proflines, in
         vmp_write_meta("bits", "64");
     } else if (bits == 32) {
         vmp_write_meta("bits", "32");
+    }
+
+    if (real_time) {
+        vmp_write_meta("type", "real_time");
+    } else {
+        vmp_write_meta("type", "prof_time");
     }
 
     return success;

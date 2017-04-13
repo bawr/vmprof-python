@@ -156,10 +156,11 @@ static PyObject *enable_vmprof(PyObject* self, PyObject *args)
     int memory = 0;
     int lines = 0;
     int native = 0;
+    int real_time = 0;
     double interval;
     char *p_error;
 
-    if (!PyArg_ParseTuple(args, "id|iii", &fd, &interval, &memory, &lines, &native)) {
+    if (!PyArg_ParseTuple(args, "id|iiii", &fd, &interval, &memory, &lines, &native, &real_time)) {
         return NULL;
     }
     assert(fd >= 0 && "file descripter provided to vmprof must not" \
@@ -170,6 +171,13 @@ static PyObject *enable_vmprof(PyObject* self, PyObject *args)
         return NULL;
     }
 
+#ifndef VMPROF_UNIX
+    if (is_real_time) {
+        PyErr_SetString(PyExc_ValueError, "real time profiling is not supported");
+        return NULL;
+    }
+#endif
+
     vmp_profile_lines(lines);
 
     if (!Original_code_dealloc) {
@@ -177,13 +185,13 @@ static PyObject *enable_vmprof(PyObject* self, PyObject *args)
         PyCode_Type.tp_dealloc = &cpyprof_code_dealloc;
     }
 
-    p_error = vmprof_init(fd, interval, memory, lines, "cpython", native);
+    p_error = vmprof_init(fd, interval, memory, lines, "cpython", native, real_time);
     if (p_error) {
         PyErr_SetString(PyExc_ValueError, p_error);
         return NULL;
     }
 
-    if (vmprof_enable(memory, native) < 0) {
+    if (vmprof_enable(memory, native, real_time) < 0) {
         PyErr_SetFromErrno(PyExc_OSError);
         return NULL;
     }
